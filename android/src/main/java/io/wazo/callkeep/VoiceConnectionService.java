@@ -199,8 +199,8 @@ public class VoiceConnectionService extends ConnectionService {
         );
         headlessIntent.putExtra("callUUID", uuid);
         headlessIntent.putExtra("name", displayName);
-        headlessIntent.putExtra("handle", number);
-        Log.d(TAG, "wakeUpApplication: " + uuid + ", number : " + number + ", displayName:" + displayName);
+        headlessIntent.putExtra("handle", identifier);
+        Log.d(TAG, "wakeUpApplication: " + uuid + ", number : " + identifier + ", displayName:" + displayName);
 
         ComponentName name = this.getApplicationContext().startService(headlessIntent);
         if (name != null) {
