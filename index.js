@@ -97,7 +97,9 @@ class RNCallKeep {
       RNCallKeepModule.startCall(uuid, handle, contactIdentifier);
       return;
     }
-
+    console.log('uuid', uuid);
+    console.log('handle', handle);
+    console.log('contact identifier', contactIdentifier);
     RNCallKeepModule.startCall(uuid, handle, contactIdentifier, handleType, hasVideo);
   };
 

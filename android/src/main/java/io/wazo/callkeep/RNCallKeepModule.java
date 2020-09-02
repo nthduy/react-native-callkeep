@@ -60,6 +60,7 @@ import com.facebook.react.HeadlessJsTaskService;
 import com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter;
 
 import java.lang.reflect.Array;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -71,7 +72,7 @@ import static androidx.core.app.ActivityCompat.requestPermissions;
 
 import static io.wazo.callkeep.Constants.EXTRA_CALLER_NAME;
 import static io.wazo.callkeep.Constants.EXTRA_CALL_UUID;
-import static io.wazo.callkeep.Constants.EXTRA_CALL_NUMBER;
+import static io.wazo.callkeep.Constants.EXTRA_CALL_IDENTIFIER;
 import static io.wazo.callkeep.Constants.ACTION_END_CALL;
 import static io.wazo.callkeep.Constants.ACTION_ANSWER_CALL;
 import static io.wazo.callkeep.Constants.ACTION_MUTE_CALL;
@@ -83,6 +84,7 @@ import static io.wazo.callkeep.Constants.ACTION_ONGOING_CALL;
 import static io.wazo.callkeep.Constants.ACTION_AUDIO_SESSION;
 import static io.wazo.callkeep.Constants.ACTION_CHECK_REACHABILITY;
 import static io.wazo.callkeep.Constants.ACTION_WAKE_APP;
+import static io.wazo.callkeep.Constants.ACTION_SHOW_INCOMING_CALL;
 
 // @see https://github.com/kbagchiGWC/voice-quickstart-android/blob/9a2aff7fbe0d0a5ae9457b48e9ad408740dfb968/exampleConnectionService/src/main/java/com/twilio/voice/examples/connectionservice/VoiceConnectionServiceActivity.java
 public class RNCallKeepModule extends ReactContextBaseJavaModule {
@@ -120,7 +122,7 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule {
         VoiceConnectionService.setAvailable(false);
         this._settings = options;
 
-        if (isConnectionServiceAvailable()) {
+        if (isConnectionServiceAvailable(_settings)) {
             this.registerPhoneAccount();
             this.registerEvents();
             VoiceConnectionService.setAvailable(true);
@@ -156,7 +158,7 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule {
         Log.d(TAG, "displayIncomingCall number: " + number + ", callerName: " + callerName);
 
         Bundle extras = new Bundle();
-        Uri uri = Uri.fromParts(PhoneAccount.SCHEME_TEL, number, null);
+        Uri uri = Uri.fromParts(PhoneAccount.SCHEME_SIP, number, null);
 
         extras.putParcelable(TelecomManager.EXTRA_INCOMING_CALL_ADDRESS, uri);
         extras.putString(EXTRA_CALLER_NAME, callerName);
@@ -188,12 +190,14 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule {
         Log.d(TAG, "startCall number: " + number + ", callerName: " + callerName);
 
         Bundle extras = new Bundle();
-        Uri uri = Uri.fromParts(PhoneAccount.SCHEME_TEL, number, null);
+        Uri uri = Uri.fromParts(PhoneAccount.SCHEME_SIP, number, null);
+        
+        Log.d(TAG, "URI" + uri.toString());
 
         Bundle callExtras = new Bundle();
         callExtras.putString(EXTRA_CALLER_NAME, callerName);
         callExtras.putString(EXTRA_CALL_UUID, uuid);
-        callExtras.putString(EXTRA_CALL_NUMBER, number);
+        callExtras.putString(EXTRA_CALL_IDENTIFIER, number);
 
         extras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle);
         extras.putParcelable(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS, callExtras);
@@ -395,6 +399,7 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule {
     public void setCurrentCallActive(String uuid) {
         Connection conn = VoiceConnectionService.getConnection(uuid);
         if (conn == null) {
+            Log.d(TAG, "connection null");
             return;
         }
 
@@ -439,6 +444,16 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
+    public static Boolean isConnectionServiceAvailable(ReadableMap options) {
+        if (options != null && options.hasKey("selfManaged") && options.getBoolean("selfManaged")) {
+            // Self managed connection is available since api level 26
+            return Build.VERSION.SDK_INT >= 26;
+        } else {
+            return isConnectionServiceAvailable();
+        }
+    }
+
+    @ReactMethod
     public void backToForeground() {
         Context context = getAppContext();
         String packageName = context.getApplicationContext().getPackageName();
@@ -479,7 +494,13 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule {
         String appName = this.getApplicationName(this.getAppContext());
 
         PhoneAccount.Builder builder = new PhoneAccount.Builder(handle, appName)
-                .setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER);
+                                            .addSupportedUriScheme(PhoneAccount.SCHEME_SIP);   
+
+        if (_settings != null && _settings.hasKey("selfManaged") && _settings.getBoolean("selfManaged")) {
+            builder.setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED | PhoneAccount.CAPABILITY_VIDEO_CALLING);
+        } else {
+            builder.setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER | PhoneAccount.CAPABILITY_VIDEO_CALLING);
+        }                                            
 
         if (_settings != null && _settings.hasKey("imageName")) {
             int identifier = appContext.getResources().getIdentifier(_settings.getString("imageName"), "drawable", appContext.getPackageName());
@@ -536,6 +557,7 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule {
             intentFilter.addAction(ACTION_HOLD_CALL);
             intentFilter.addAction(ACTION_ONGOING_CALL);
             intentFilter.addAction(ACTION_AUDIO_SESSION);
+            intentFilter.addAction(ACTION_SHOW_INCOMING_CALL);
             intentFilter.addAction(ACTION_CHECK_REACHABILITY);
             LocalBroadcastManager.getInstance(this.reactContext).registerReceiver(voiceBroadcastReceiver, intentFilter);
             isReceiverRegistered = true;
@@ -600,28 +622,23 @@ public class RNCallKeepModule extends ReactContextBaseJavaModule {
                     sendEventToJS("RNCallKeepDidPerformDTMFAction", args);
                     break;
                 case ACTION_ONGOING_CALL:
-                    args.putString("handle", attributeMap.get(EXTRA_CALL_NUMBER));
+                    args.putString("handle", attributeMap.get(EXTRA_CALL_IDENTIFIER));
                     args.putString("callUUID", attributeMap.get(EXTRA_CALL_UUID));
                     args.putString("name", attributeMap.get(EXTRA_CALLER_NAME));
                     sendEventToJS("RNCallKeepDidReceiveStartCallAction", args);
+                    break;
+                case ACTION_SHOW_INCOMING_CALL:
+                    args.putString("handle", attributeMap.get(EXTRA_CALL_IDENTIFIER));
+                    args.putString("callUUID", attributeMap.get(EXTRA_CALL_UUID));
+                    args.putString("name", attributeMap.get(EXTRA_CALLER_NAME));
+                    Log.d(TAG, "RNCallKeepPerformShowIncomingCallAction: " + attributeMap.get(EXTRA_CALL_UUID) + ", number : " + attributeMap.get(EXTRA_CALL_IDENTIFIER) + ", displayName:" + attributeMap.get(EXTRA_CALLER_NAME));
+                    sendEventToJS("RNCallKeepPerformShowIncomingCallAction", args);
                     break;
                 case ACTION_AUDIO_SESSION:
                     sendEventToJS("RNCallKeepDidActivateAudioSession", null);
                     break;
                 case ACTION_CHECK_REACHABILITY:
                     sendEventToJS("RNCallKeepCheckReachability", null);
-                    break;
-                case ACTION_WAKE_APP:
-                    Intent headlessIntent = new Intent(reactContext, RNCallKeepBackgroundMessagingService.class);
-                    headlessIntent.putExtra("callUUID", attributeMap.get(EXTRA_CALL_UUID));
-                    headlessIntent.putExtra("name", attributeMap.get(EXTRA_CALLER_NAME));
-                    headlessIntent.putExtra("handle", attributeMap.get(EXTRA_CALL_NUMBER));
-                    Log.d(TAG, "wakeUpApplication: " + attributeMap.get(EXTRA_CALL_UUID) + ", number : " + attributeMap.get(EXTRA_CALL_NUMBER) + ", displayName:" + attributeMap.get(EXTRA_CALLER_NAME));
-
-                    ComponentName name = reactContext.startService(headlessIntent);
-                    if (name != null) {
-                        HeadlessJsTaskService.acquireWakeLockNow(reactContext);
-                    }
                     break;
             }
         }

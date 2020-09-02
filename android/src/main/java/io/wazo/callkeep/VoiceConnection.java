@@ -46,8 +46,9 @@ import static io.wazo.callkeep.Constants.ACTION_MUTE_CALL;
 import static io.wazo.callkeep.Constants.ACTION_UNHOLD_CALL;
 import static io.wazo.callkeep.Constants.ACTION_UNMUTE_CALL;
 import static io.wazo.callkeep.Constants.EXTRA_CALLER_NAME;
-import static io.wazo.callkeep.Constants.EXTRA_CALL_NUMBER;
+import static io.wazo.callkeep.Constants.EXTRA_CALL_IDENTIFIER;
 import static io.wazo.callkeep.Constants.EXTRA_CALL_UUID;
+import static io.wazo.callkeep.Constants.ACTION_SHOW_INCOMING_CALL;
 
 @TargetApi(Build.VERSION_CODES.M)
 public class VoiceConnection extends Connection {
@@ -61,11 +62,11 @@ public class VoiceConnection extends Connection {
         this.handle = handle;
         this.context = context;
 
-        String number = handle.get(EXTRA_CALL_NUMBER);
+        String identifier = handle.get(EXTRA_CALL_IDENTIFIER);
         String name = handle.get(EXTRA_CALLER_NAME);
 
-        if (number != null) {
-            setAddress(Uri.parse(number), TelecomManager.PRESENTATION_ALLOWED);
+        if (identifier != null) {
+            setAddress(Uri.parse(identifier), TelecomManager.PRESENTATION_ALLOWED);
         }
         if (name != null && !name.equals("")) {
             setCallerDisplayName(name, TelecomManager.PRESENTATION_ALLOWED);
@@ -73,9 +74,17 @@ public class VoiceConnection extends Connection {
     }
 
     @Override
+    public void onShowIncomingCallUi() {
+        super.onShowIncomingCallUi();
+        Log.d(TAG, "onShowIncomingCallUi called");
+
+        sendCallRequestToActivity(ACTION_SHOW_INCOMING_CALL, handle);
+    }
+
+    @Override
     public void onExtrasChanged(Bundle extras) {
         super.onExtrasChanged(extras);
-        HashMap attributeMap = (HashMap<String, String>)extras.getSerializable("attributeMap");
+        HashMap attributeMap = (HashMap<String, String>) extras.getSerializable("attributeMap");
         if (attributeMap != null) {
             handle = attributeMap;
         }
@@ -96,7 +105,7 @@ public class VoiceConnection extends Connection {
         super.onAnswer();
         Log.d(TAG, "onAnswer called");
 
-        setConnectionCapabilities(getConnectionCapabilities() | Connection.CAPABILITY_HOLD);
+        setConnectionCapabilities(getConnectionCapabilities());
         setAudioModeIsVoip(true);
 
         sendCallRequestToActivity(ACTION_ANSWER_CALL, handle);
@@ -122,7 +131,7 @@ public class VoiceConnection extends Connection {
         Log.d(TAG, "onDisconnect executed");
         try {
             ((VoiceConnectionService) context).deinitConnection(handle.get(EXTRA_CALL_UUID));
-        } catch(Throwable exception) {
+        } catch (Throwable exception) {
             Log.e(TAG, "Handle map error", exception);
         }
         destroy();
@@ -150,7 +159,7 @@ public class VoiceConnection extends Connection {
             default:
                 break;
         }
-        ((VoiceConnectionService)context).deinitConnection(handle.get(EXTRA_CALL_UUID));
+        ((VoiceConnectionService) context).deinitConnection(handle.get(EXTRA_CALL_UUID));
         destroy();
     }
 
@@ -162,7 +171,7 @@ public class VoiceConnection extends Connection {
         Log.d(TAG, "onAbort executed");
         try {
             ((VoiceConnectionService) context).deinitConnection(handle.get(EXTRA_CALL_UUID));
-        } catch(Throwable exception) {
+        } catch (Throwable exception) {
             Log.e(TAG, "Handle map error", exception);
         }
         destroy();
@@ -190,7 +199,7 @@ public class VoiceConnection extends Connection {
         Log.d(TAG, "onReject executed");
         try {
             ((VoiceConnectionService) context).deinitConnection(handle.get(EXTRA_CALL_UUID));
-        } catch(Throwable exception) {
+        } catch (Throwable exception) {
             Log.e(TAG, "Handle map error", exception);
         }
         destroy();

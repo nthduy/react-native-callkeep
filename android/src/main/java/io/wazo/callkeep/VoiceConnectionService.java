@@ -34,6 +34,7 @@ import android.telecom.ConnectionRequest;
 import android.telecom.ConnectionService;
 import android.telecom.DisconnectCause;
 import android.telecom.PhoneAccountHandle;
+import android.telecom.PhoneAccount;
 import android.telecom.TelecomManager;
 import android.util.Log;
 
@@ -56,7 +57,7 @@ import static io.wazo.callkeep.Constants.ACTION_ONGOING_CALL;
 import static io.wazo.callkeep.Constants.ACTION_CHECK_REACHABILITY;
 import static io.wazo.callkeep.Constants.ACTION_WAKE_APP;
 import static io.wazo.callkeep.Constants.EXTRA_CALLER_NAME;
-import static io.wazo.callkeep.Constants.EXTRA_CALL_NUMBER;
+import static io.wazo.callkeep.Constants.EXTRA_CALL_IDENTIFIER;
 import static io.wazo.callkeep.Constants.EXTRA_CALL_UUID;
 
 // @see https://github.com/kbagchiGWC/voice-quickstart-android/blob/9a2aff7fbe0d0a5ae9457b48e9ad408740dfb968/exampleConnectionService/src/main/java/com/twilio/voice/examples/connectionservice/VoiceConnectionService.java
@@ -148,7 +149,7 @@ public class VoiceConnectionService extends ConnectionService {
         Bundle extras = request.getExtras();
         Connection outgoingCallConnection = null;
         String number = request.getAddress().getSchemeSpecificPart();
-        String extrasNumber = extras.getString(EXTRA_CALL_NUMBER);
+        String extrasNumber = extras.getString(EXTRA_CALL_IDENTIFIER);
         String displayName = extras.getString(EXTRA_CALLER_NAME);
         Boolean isForeground = VoiceConnectionService.isRunning(this.getApplicationContext());
 
@@ -167,7 +168,7 @@ public class VoiceConnectionService extends ConnectionService {
         if (extrasNumber == null || !extrasNumber.equals(number)) {
             extras.putString(EXTRA_CALL_UUID, uuid);
             extras.putString(EXTRA_CALLER_NAME, displayName);
-            extras.putString(EXTRA_CALL_NUMBER, number);
+            extras.putString(EXTRA_CALL_IDENTIFIER, number);
         }
 
         outgoingCallConnection = createConnection(request);
@@ -191,7 +192,7 @@ public class VoiceConnectionService extends ConnectionService {
         return outgoingCallConnection;
     }
 
-    private void wakeUpApplication(String uuid, String number, String displayName) {
+    private void wakeUpApplication(String uuid, String identifier, String displayName) {
         Intent headlessIntent = new Intent(
             this.getApplicationContext(),
             RNCallKeepBackgroundMessagingService.class
@@ -241,9 +242,16 @@ public class VoiceConnectionService extends ConnectionService {
     private Connection createConnection(ConnectionRequest request) {
         Bundle extras = request.getExtras();
         HashMap<String, String> extrasMap = this.bundleToMap(extras);
-        extrasMap.put(EXTRA_CALL_NUMBER, request.getAddress().toString());
+        extrasMap.put(EXTRA_CALL_IDENTIFIER, request.getAddress().toString());
         VoiceConnection connection = new VoiceConnection(this, extrasMap);
-        connection.setConnectionCapabilities(Connection.CAPABILITY_MUTE | Connection.CAPABILITY_SUPPORT_HOLD);
+        connection.setConnectionCapabilities(Connection.CAPABILITY_MUTE);
+
+        TelecomManager telecomManager = (TelecomManager) this.getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
+        PhoneAccount phoneAccount = telecomManager.getPhoneAccount(request.getAccountHandle());
+        if ((phoneAccount.getCapabilities() & PhoneAccount.CAPABILITY_SELF_MANAGED) != 0) {
+            connection.setConnectionProperties(Connection.PROPERTY_SELF_MANAGED);
+        }
+
         connection.setInitializing();
         connection.setExtras(extras);
         currentConnections.put(extras.getString(EXTRA_CALL_UUID), connection);
